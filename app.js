@@ -1,3 +1,4 @@
+const API_URL = 'https://script.google.com/macros/s/AKfycbztJJJ6dtkmHR54yPSJSO33IK8HGPzrUasnYV3dvHcch8COAM5fCHZj5lm46gJUWsBe/exec';
 const DEFAULT_FACTIONS = [
   { key:'pra', title:'Правительство', leader:'Glebik_Dollan', names:['MakwicK_Kotov','Ksenya_Malysheva','Erik_Smirnov','Ferz_Dollan'] },
   { key:'ufsb', title:'УФСБ', leader:'Max_Deep', names:['Harrison_Bradford','Nikolas_Jackson','Nikita_Saddes','Alexei_Lincoln'] },
