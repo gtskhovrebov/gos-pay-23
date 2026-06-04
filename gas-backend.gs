@@ -1,119 +1,116 @@
-/*
-  GOS Pay backend for Google Apps Script
-  Deploy: Extensions -> Apps Script -> Deploy -> Web app
-  Recommended access: Anyone with Google account. Execute as: User accessing the web app.
-*/
-const DEFAULT_SHEET_ID = '1LSlUC-t6_7x8vfg5mQebIwRHfDH8h0bB1Xzxq7wpv_U';
+const SPREADSHEET_ID = '1LSlUC-t6_7x8vfg5mQebIwRHfDH8h0bB1Xzxq7wpv_U';
+const CURATORS_SHEET_NAME = 'Кураторы ГОС';
 const STATE_SHEET_NAME = '_GOS_PAY_STATE';
 
 function doGet(e) {
-  const action = String(e.parameter.action || 'get');
-  const sheetId = String(e.parameter.sheetId || DEFAULT_SHEET_ID);
+  const action = String((e && e.parameter && e.parameter.action) || 'get');
+  const sheetId = String((e && e.parameter && e.parameter.sheetId) || SPREADSHEET_ID);
   const access = checkEditorAccess_(sheetId);
-  if (!access.allowed) return json_({ allowed: false, email: access.email || '', reason: 'NO_EDITOR_ACCESS' });
-  if (action === 'access') return json_({ allowed: true, email: access.email, roles: ['Руководство государственных организаций','Старший куратор организации','Куратор'] });
-  if (action === 'curators') return json_({ allowed: true, email: access.email, factions: readCurators_(sheetId) });
-  const state = readState_(sheetId);
+  if (!access.allowed) return json_({ allowed: false, email: access.email || '', reason: access.reason });
   const factions = readCurators_(sheetId);
-  if (factions.length) state.factions = factions;
-  return json_({ allowed: true, email: access.email, state: state, factions: factions });
+  if (action === 'access') return json_({ allowed: true, email: access.email });
+  if (action === 'curators') return json_({ allowed: true, email: access.email, factions });
+  const state = readState_(sheetId);
+  state.factions = factions;
+  return json_({ allowed: true, email: access.email, state, factions });
 }
 
 function doPost(e) {
-  const payload = JSON.parse(e.postData.contents || '{}');
-  const sheetId = String(payload.sheetId || DEFAULT_SHEET_ID);
+  const payload = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  const sheetId = String(payload.sheetId || SPREADSHEET_ID);
   const access = checkEditorAccess_(sheetId);
-  if (!access.allowed) return json_({ allowed: false, reason: 'NO_EDITOR_ACCESS' });
+  if (!access.allowed) return json_({ allowed: false, reason: access.reason });
   if (payload.action === 'reset') {
     const state = readState_(sheetId);
     state.donations = {};
+    state.updatedAt = new Date().toISOString();
     writeState_(sheetId, state);
-    return json_({ ok: true });
+    return json_({ ok: true, updatedAt: state.updatedAt });
   }
   if (payload.state) {
-    const currentFactions = readCurators_(sheetId);
     const state = payload.state;
-    if (currentFactions.length) state.factions = currentFactions;
+    state.factions = readCurators_(sheetId);
+    state.updatedAt = new Date().toISOString();
     writeState_(sheetId, state);
-    return json_({ ok: true, updatedAt: new Date().toISOString() });
+    return json_({ ok: true, updatedAt: state.updatedAt });
   }
   return json_({ ok: false });
 }
 
 function checkEditorAccess_(sheetId) {
   const email = Session.getActiveUser().getEmail();
-  try {
-    const file = DriveApp.getFileById(sheetId);
-    const owner = file.getOwner() && file.getOwner().getEmail();
-    if (email && owner && email.toLowerCase() === owner.toLowerCase()) return { allowed: true, email: email };
-    const editors = file.getEditors().map(u => String(u.getEmail()).toLowerCase());
-    return { allowed: !!email && editors.indexOf(email.toLowerCase()) !== -1, email: email };
-  } catch (err) {
-    return { allowed: false, email: email, error: String(err) };
-  }
+  if (!email) return { allowed: false, email: '', reason: 'NO_GOOGLE_EMAIL' };
+  const file = DriveApp.getFileById(sheetId);
+  const owner = file.getOwner().getEmail();
+  const editors = file.getEditors().map(u => u.getEmail());
+  return { allowed: email === owner || editors.includes(email), email };
 }
 
 function readCurators_(sheetId) {
   const ss = SpreadsheetApp.openById(sheetId);
-  const names = ['кураторы', 'Кураторы', 'Лист1', 'Sheet1'];
-  let sheet = null;
-  for (let i = 0; i < names.length; i++) { sheet = ss.getSheetByName(names[i]); if (sheet) break; }
-  if (!sheet) sheet = ss.getSheets()[0];
-  const values = sheet.getDataRange().getDisplayValues();
-  return parseFactions_(values);
+  const sheet = ss.getSheetByName(CURATORS_SHEET_NAME);
+  if (!sheet) throw new Error('Лист "' + CURATORS_SHEET_NAME + '" не найден');
+  const range = sheet.getDataRange();
+  return parseCurators_(range.getDisplayValues(), range.getFontColors());
 }
 
-function parseFactions_(rows) {
+function parseCurators_(values, fontColors) {
   const headers = [];
-  rows.forEach((row, r) => row.forEach((cell, c) => {
-    const title = normalizeTitle_(cell);
-    if (title) headers.push({ title: title, r: r, c: c });
-  }));
+  const aliases = [
+    { title: 'Правительство', key: 'pra', aliases: ['пра-во', 'правительство'] },
+    { title: 'УФСБ', key: 'ufsb', aliases: ['уфсб', 'фсб'] },
+    { title: 'МВД', key: 'mvd', aliases: ['мвд'] },
+    { title: 'ВЧ', key: 'vch', aliases: ['вч'] },
+    { title: 'МЗ', key: 'mz', aliases: ['мз'] },
+    { title: 'СМИ', key: 'smi', aliases: ['сми'] }
+  ];
+  for (let r = 0; r < values.length; r++) {
+    for (let c = 0; c < values[r].length; c++) {
+      const cell = clean_(values[r][c]).toLowerCase();
+      if (!cell) continue;
+      const found = aliases.find(f => f.aliases.some(a => cell === a || cell.includes(a)));
+      if (found) headers.push({ row: r, col: c, title: found.title, key: found.key });
+    }
+  }
+  headers.sort((a, b) => a.row - b.row || a.col - b.col);
   const factions = [];
-  headers.forEach(h => {
-    const same = headers.filter(x => x.r === h.r && x.c > h.c).sort((a,b) => a.c - b.c)[0];
-    const endC = same ? same.c - 1 : h.c + 3;
-    const vals = [];
-    for (let rr = h.r + 1; rr < Math.min(rows.length, h.r + 9); rr++) {
-      for (let cc = h.c; cc <= endC; cc++) {
-        const v = String((rows[rr] && rows[rr][cc]) || '').trim();
-        if (/^[\wА-Яа-яЁё]+_[\wА-Яа-яЁё]+$/.test(v) && vals.indexOf(v) === -1) vals.push(v);
+  headers.forEach(header => {
+    const sameRowNext = headers.filter(h => h.row === header.row && h.col > header.col).sort((a,b)=>a.col-b.col)[0];
+    const belowNext = headers.filter(h => h.row > header.row).sort((a,b)=>a.row-b.row)[0];
+    const endCol = sameRowNext ? sameRowNext.col - 1 : header.col + 2;
+    const endRow = belowNext ? belowNext.row - 1 : values.length - 1;
+    const faction = { key: header.key, title: header.title, leader: '', names: [] };
+    for (let r = header.row + 1; r <= endRow; r++) {
+      for (let c = header.col; c <= Math.min(endCol, values[r].length - 1); c++) {
+        const nick = clean_(values[r][c]);
+        if (!isNickname_(nick)) continue;
+        const color = String(fontColors[r][c] || '').toLowerCase();
+        if (isSeniorFontColor_(color)) faction.leader = nick;
+        else if (!faction.names.includes(nick)) faction.names.push(nick);
       }
     }
-    if (vals.length) factions.push({ key: keyByTitle_(h.title), title: h.title, leader: vals[0] || '', names: vals.slice(1) });
+    if (faction.leader || faction.names.length) factions.push(faction);
   });
   return factions;
 }
 
-function normalizeTitle_(v) {
-  const s = String(v || '').trim().toLowerCase();
-  if (!s) return '';
-  if (s.indexOf('прав') !== -1 || s.indexOf('пра-во') !== -1) return 'Правительство';
-  if (s.indexOf('уфсб') !== -1) return 'УФСБ';
-  if (s.indexOf('мвд') !== -1) return 'МВД';
-  if (s === 'вч') return 'ВЧ';
-  if (s === 'мз') return 'МЗ';
-  if (s.indexOf('сми') !== -1) return 'СМИ';
-  return '';
+function isSeniorFontColor_(color) {
+  return ['#ff0000','#cc0000','#c00000','#990000','#a61c00','#e06666'].includes(String(color || '').toLowerCase());
 }
-function keyByTitle_(t) { return ({'Правительство':'pra','УФСБ':'ufsb','МВД':'mvd','ВЧ':'vch','МЗ':'mz','СМИ':'smi'})[t] || 'pra'; }
-
-function stateSheet_(sheetId) {
-  const ss = SpreadsheetApp.openById(sheetId);
-  let sh = ss.getSheetByName(STATE_SHEET_NAME);
-  if (!sh) { sh = ss.insertSheet(STATE_SHEET_NAME); sh.hideSheet(); sh.getRange(1,1,1,2).setValues([['key','json']]); }
-  return sh;
-}
+function isNickname_(text) { return /^[A-Za-zА-Яа-яЁё0-9]+_[A-Za-zА-Яа-яЁё0-9]+$/.test(clean_(text)); }
 function readState_(sheetId) {
-  const sh = stateSheet_(sheetId);
-  const value = sh.getRange(2,2).getValue();
-  if (!value) return { factions: [], donations: {}, updatedAt: Date.now() };
-  try { return JSON.parse(value); } catch (err) { return { factions: [], donations: {}, updatedAt: Date.now() }; }
+  const ss = SpreadsheetApp.openById(sheetId);
+  let sheet = ss.getSheetByName(STATE_SHEET_NAME);
+  if (!sheet) { sheet = ss.insertSheet(STATE_SHEET_NAME); sheet.hideSheet(); const initialState = { factions: [], donations: {}, updatedAt: new Date().toISOString() }; sheet.getRange(1,1).setValue(JSON.stringify(initialState)); return initialState; }
+  const raw = String(sheet.getRange(1,1).getValue() || '').trim();
+  if (!raw) return { factions: [], donations: {}, updatedAt: new Date().toISOString() };
+  try { return JSON.parse(raw); } catch { return { factions: [], donations: {}, updatedAt: new Date().toISOString() }; }
 }
 function writeState_(sheetId, state) {
-  const sh = stateSheet_(sheetId);
-  sh.getRange(2,1,1,2).setValues([['state', JSON.stringify(state)]]);
+  const ss = SpreadsheetApp.openById(sheetId);
+  let sheet = ss.getSheetByName(STATE_SHEET_NAME);
+  if (!sheet) { sheet = ss.insertSheet(STATE_SHEET_NAME); sheet.hideSheet(); }
+  sheet.getRange(1,1).setValue(JSON.stringify(state));
 }
-function json_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
-}
+function clean_(value) { return String(value || '').replace(/\n/g, ' ').replace(/\s+/g, ' ').trim(); }
+function json_(data) { return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON); }

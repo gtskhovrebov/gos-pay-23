@@ -1,6 +1,5 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbytaGgSH4mo7cnF8GcHzSB1QKmydaPtN2NmKi99fHaqh6OYIxkvC0eOL-fMir9n8oXV/exec';
 const DEFAULT_FACTIONS = [
-  { key:'pra', title:'Правительство', leader:'TEST_TEST_TEST', names:['MakwicK_Kotov','Ksenya_Malysheva','Erik_Smirnov','Ferz_Dollan'] },
+  { key:'pra', title:'Правительство', leader:'Glebik_Dollan', names:['MakwicK_Kotov','Ksenya_Malysheva','Erik_Smirnov','Ferz_Dollan'] },
   { key:'ufsb', title:'УФСБ', leader:'Max_Deep', names:['Harrison_Bradford','Nikolas_Jackson','Nikita_Saddes','Alexei_Lincoln'] },
   { key:'mvd', title:'МВД', leader:'', names:['Lyutsifer_Lolik','Nikolas_Jackson','MakwicK_Kotov','Nikolas_Millano','Fox_Devil'] },
   { key:'vch', title:'ВЧ', leader:'', names:['Dmitrii_Sokolow','Alexei_Lincoln','Dexter_Hatred'] },
@@ -10,38 +9,18 @@ const DEFAULT_FACTIONS = [
 const BASE_SALARY = 100;
 const STORAGE_KEY = 'gos-pay-state-v2';
 const CONFIG_KEY = 'gos-pay-config-v2';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbytaGgSH4mo7cnF8GcHzSB1QKmydaPtN2NmKi99fHaqh6OYIxkvC0eOL-fMir9n8oXV/exec';
+const DEFAULT_SHEET_ID = '1LSlUC-t6_7x8vfg5mQebIwRHfDH8h0bB1Xzxq7wpv_U';
 let state = loadState();
 let config = loadConfig();
 const $ = id => document.getElementById(id);
 
 function loadState(){ try{return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {factions:DEFAULT_FACTIONS,donations:{},updatedAt:0};}catch{return {factions:DEFAULT_FACTIONS,donations:{},updatedAt:0};}}
-async function syncFromGoogleSheet() {
-  if (!API_URL) return;
-
-  try {
-    const res = await fetch(API_URL + '?action=get');
-    const data = await res.json();
-
-    if (!data.allowed) {
-      alert('Доступ запрещён. Нужен доступ редактора к Google Таблице.');
-      return;
-    }
-
-    if (data.state) {
-      state = data.state;
-    }
-
-    if (data.factions && data.factions.length) {
-      state.factions = data.factions;
-    }
-
-    saveState();
-    render();
-  } catch (err) {
-    console.error('Ошибка синхронизации:', err);
-  }
+function loadConfig(){
+  const defaults={theme:'system',riskLimit:100,sheetId:DEFAULT_SHEET_ID,apiUrl:DEFAULT_API_URL};
+  try{return {...defaults,...(JSON.parse(localStorage.getItem(CONFIG_KEY))||{})};}
+  catch{return defaults;}
 }
-function loadConfig(){ try{return JSON.parse(localStorage.getItem(CONFIG_KEY)) || {theme:'system',riskLimit:100,sheetId:'1LSlUC-t6_7x8vfg5mQebIwRHfDH8h0bB1Xzxq7wpv_U'};}catch{return {theme:'system',riskLimit:100};}}
 function saveState(){ state.updatedAt=Date.now(); localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }
 function saveConfig(){ localStorage.setItem(CONFIG_KEY,JSON.stringify(config)); }
 function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
@@ -77,13 +56,31 @@ function riskText(){const limit=Number(config.riskLimit)||100;const rows=uniqueN
 async function copyText(text){await navigator.clipboard.writeText(text);toast('Текст скопирован');}
 
 async function checkAccess(){const api=($('apiUrl').value||'').trim();if(!api)return toast('Сначала вставь Apps Script URL');try{const r=await fetch(`${api}?action=access&sheetId=${encodeURIComponent($('sheetId').value.trim())}`);const d=await r.json();if(d.allowed)toast(`Доступ разрешён: ${d.email||'редактор таблицы'}`);else toast('Доступ запрещён: нет прав редактора');}catch{toast('Не удалось проверить доступ');}}
-async function syncCurators(){config.apiUrl=$('apiUrl').value.trim();config.sheetId=$('sheetId').value.trim();saveConfig();try{let factions=null;if(config.apiUrl){const r=await fetch(`${config.apiUrl}?action=curators&sheetId=${encodeURIComponent(config.sheetId)}`);const d=await r.json();if(d.allowed===false){toast('Доступ запрещён');return;}factions=d.factions;}else{factions=await importPublicSheet(config.sheetId);}if(factions&&factions.length){state.factions=factions;cleanDonations();saveState();render();toast('Список кураторов обновлён');await syncRemote();}else toast('Кураторы не найдены');}catch(e){toast('Ошибка синхронизации кураторов');}}
+async function syncCurators(){
+  config.apiUrl=($('apiUrl').value||config.apiUrl||DEFAULT_API_URL).trim();
+  config.sheetId=($('sheetId').value||config.sheetId||DEFAULT_SHEET_ID).trim();
+  saveConfig();
+  if(!config.apiUrl){toast('Нужен Apps Script URL. Через публичную таблицу роли старших не читаются.');return;}
+  try{
+    const r=await fetch(`${config.apiUrl}?action=curators&sheetId=${encodeURIComponent(config.sheetId)}`);
+    const d=await r.json();
+    if(d.allowed===false){toast('Доступ запрещён');return;}
+    const factions=d.factions;
+    if(factions&&factions.length){
+      state.factions=factions;
+      cleanDonations();
+      saveState();
+      render();
+      toast('Список кураторов обновлён');
+    }else toast('Кураторы не найдены');
+  }catch(e){console.error(e);toast('Ошибка синхронизации кураторов');}
+}
 async function importPublicSheet(sheetId){const names=['кураторы','Кураторы','Лист1','Sheet1'];for(const sheet of names){try{const url=`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}`;const res=await fetch(url);const txt=await res.text();const json=JSON.parse(txt.substring(txt.indexOf('{'),txt.lastIndexOf('}')+1));const rows=json.table.rows.map(r=>(r.c||[]).map(c=>c?.v??''));const factions=parseFactions(rows);if(factions.length)return factions;}catch{}}return null;}
 async function loadRemote(){config.apiUrl=$('apiUrl').value.trim();saveConfig();if(!config.apiUrl)return;try{const r=await fetch(`${config.apiUrl}?action=get&sheetId=${encodeURIComponent(config.sheetId||'')}`);const d=await r.json();if(d.allowed===false){toast('Доступ запрещён');return;}if(d.state){state={...state,...d.state,factions:d.factions||d.state.factions||state.factions,donations:d.state.donations||state.donations};cleanDonations();saveState();render();setStatus('Данные загружены');}}catch{setStatus('Не удалось загрузить общие данные');}}
 async function syncRemote(){config.apiUrl=$('apiUrl').value.trim();saveConfig();if(!config.apiUrl)return;try{await fetch(config.apiUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'save',sheetId:config.sheetId,state})});setStatus('Синхронизировано '+new Date().toLocaleTimeString());}catch{setStatus('Ошибка сохранения');}}
 let syncTimer;function syncRemoteDebounced(){clearTimeout(syncTimer);syncTimer=setTimeout(syncRemote,800);}
 function setStatus(t){$('statusLine').textContent=t;}
-function parseFactions(rows){const headers=[];rows.forEach((row,r)=>row.forEach((cell,c)=>{const title=normalizeTitle(cell);if(title)headers.push({title,r,c});}));const factions=[];headers.forEach(h=>{const same=headers.filter(x=>x.r===h.r&&x.c>h.c).sort((a,b)=>a.c-b.c)[0];const endC=same?same.c-1:h.c+3;const vals=[];for(let rr=h.r+1;rr<Math.min(rows.length,h.r+9);rr++){for(let cc=h.c;cc<=endC;cc++){const v=String(rows[rr]?.[cc]||'').trim();if(/^[\wА-Яа-яЁё]+_[\wА-Яа-яЁё]+$/.test(v)&&!vals.includes(v))vals.push(v);}}if(vals.length)factions.push({key:keyByTitle(h.title),title:h.title,leader:vals[0]||'',names:vals.slice(1)});});return factions;}
+function parseFactions(rows){const headers=[];rows.forEach((row,r)=>row.forEach((cell,c)=>{const title=normalizeTitle(cell);if(title)headers.push({title,r,c});}));const factions=[];headers.forEach(h=>{const same=headers.filter(x=>x.r===h.r&&x.c>h.c).sort((a,b)=>a.c-b.c)[0];const endC=same?same.c-1:h.c+3;const vals=[];for(let rr=h.r+1;rr<Math.min(rows.length,h.r+9);rr++){for(let cc=h.c;cc<=endC;cc++){const v=String(rows[rr]?.[cc]||'').trim();if(/^[\wА-Яа-яЁё]+_[\wА-Яа-яЁё]+$/.test(v)&&!vals.includes(v))vals.push(v);}}if(vals.length)factions.push({key:keyByTitle(h.title),title:h.title,leader:'',names:vals});});return factions;}
 function normalizeTitle(v){const s=String(v||'').trim().toLowerCase();if(!s)return '';if(s.includes('прав')||s.includes('пра-во'))return 'Правительство';if(s.includes('уфсб'))return 'УФСБ';if(s.includes('мвд'))return 'МВД';if(s==='вч')return 'ВЧ';if(s==='мз')return 'МЗ';if(s.includes('сми'))return 'СМИ';return '';}
 async function resetDonations(){state.donations={};saveState();renderTotals();renderRewards();await syncRemote();toast('Выплаты сброшены');}
 function loadHtml2Canvas(){
@@ -200,7 +197,4 @@ $('resetBtn').onclick=()=>$('confirmModal').classList.remove('hidden');$('cancel
 $('copyCurators').onclick=()=>copyText(curatorsText());$('copyRewards').onclick=()=>copyText(rewardsText());$('copySalary').onclick=()=>copyText(salaryText());$('copyTop').onclick=()=>copyText(topText());$('copyRisk').onclick=()=>copyText(riskText());
 document.querySelectorAll('[data-png]').forEach(b=>b.onclick=()=>exportPNG(b.dataset.png));document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>$(b.dataset.jump).scrollIntoView({behavior:'smooth',block:'start'}));
 window.matchMedia('(prefers-color-scheme: light)').addEventListener?.('change',applyTheme);
-render();
-syncFromGoogleSheet();
-setInterval(syncFromGoogleSheet, 30000);
-setTimeout(loadRemote,500);setInterval(syncCurators,30000);
+render();setTimeout(async()=>{await loadRemote();await syncCurators();},500);setInterval(syncCurators,30000);
