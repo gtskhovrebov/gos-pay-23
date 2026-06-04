@@ -6,47 +6,161 @@ const DEFAULT_FACTIONS = [
   { key:'mz', title:'МЗ', leader:'Ksenya_Malysheva', names:['Dexter_Hatred','Nezox_Shadow','Erik_Smirnov'] },
   { key:'smi', title:'СМИ', leader:'Theo_Lusker', names:['Nezox_Shadow','Ivan_Khmeliaiev'] }
 ];
+
 const BASE_SALARY = 100;
 const STORAGE_KEY = 'gos-pay-state-v2';
 const CONFIG_KEY = 'gos-pay-config-v2';
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbymAvi-YfIuAs-aCIcXShfeskYRE2_gl0aezAYp_KNHmqBbq87ijUP-gq-jxxpMhGOa/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwhsB34NIQGlZLQPTgjXsGjjQ6sXIPXgWcwbsofWesVV3e8J1iJPmLA_8P0KfrTbyj_/exec';
 const DEFAULT_SHEET_ID = '1LSlUC-t6_7x8vfg5mQebIwRHfDH8h0bB1Xzxq7wpv_U';
-let state = loadState();
-let config = loadConfig();
+
 const $ = id => document.getElementById(id);
 
-function loadState(){ try{return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {factions:DEFAULT_FACTIONS,donations:{},updatedAt:0};}catch{return {factions:DEFAULT_FACTIONS,donations:{},updatedAt:0};}}
+if(new URLSearchParams(location.search).get('reset')==='1'){
+  localStorage.removeItem(STORAGE_KEY);
+  localStorage.removeItem(CONFIG_KEY);
+  history.replaceState(null,'',location.pathname);
+}
+
+let state = loadState();
+let config = loadConfig();
+let syncTimer;
+let donationTimers = {};
+let isRenderingRewards = false;
+
+function loadState(){
+  try{
+    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {factions:DEFAULT_FACTIONS,donations:{},updatedAt:0};
+  }catch{
+    return {factions:DEFAULT_FACTIONS,donations:{},updatedAt:0};
+  }
+}
+
 function loadConfig(){
   const defaults={theme:'system',riskLimit:100,sheetId:DEFAULT_SHEET_ID,apiUrl:DEFAULT_API_URL};
   try{return {...defaults,...(JSON.parse(localStorage.getItem(CONFIG_KEY))||{})};}
   catch{return defaults;}
 }
+
 function saveState(){ state.updatedAt=Date.now(); localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }
 function saveConfig(){ localStorage.setItem(CONFIG_KEY,JSON.stringify(config)); }
 function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
-function toast(text){const t=$('toast');t.textContent=text;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
-function jsonp(url){return new Promise((resolve,reject)=>{const cb='gosPayCb_'+Date.now()+'_'+Math.floor(Math.random()*100000);const script=document.createElement('script');window[cb]=(data)=>{delete window[cb];script.remove();resolve(data);};script.onerror=()=>{delete window[cb];script.remove();reject(new Error('JSONP load failed'));};script.src=url+(url.includes('?')?'&':'?')+'callback='+encodeURIComponent(cb)+'&_='+Date.now();document.body.appendChild(script);});}
-if(new URLSearchParams(location.search).get('reset')==='1'){localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(CONFIG_KEY);history.replaceState(null,'',location.pathname);}
+function toast(text){const t=$('toast'); if(!t) return; t.textContent=text;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+function setStatus(t){const el=$('statusLine'); if(el) el.textContent=t;}
+
+function jsonp(url){
+  return new Promise((resolve,reject)=>{
+    const cb='gosPayCb_'+Date.now()+'_'+Math.floor(Math.random()*100000);
+    const script=document.createElement('script');
+    window[cb]=(data)=>{delete window[cb];script.remove();resolve(data);};
+    script.onerror=()=>{delete window[cb];script.remove();reject(new Error('JSONP load failed'));};
+    script.src=url+(url.includes('?')?'&':'?')+'callback='+encodeURIComponent(cb)+'&_='+Date.now();
+    document.body.appendChild(script);
+  });
+}
+
 function allFactionNames(){const arr=[];state.factions.forEach(f=>[f.leader,...f.names].filter(Boolean).forEach(n=>arr.push(n.trim())));return arr;}
 function uniqueNames(){return [...new Set(allFactionNames())].sort((a,b)=>a.localeCompare(b));}
 function getDon(n){return state.donations[n]||{stk:0,leader:0,management:0};}
 function sumDon(n){const d=getDon(n);return (+d.stk||0)+(+d.leader||0)+(+d.management||0);}
-function setDon(n,k,v){state.donations[n]={...getDon(n),[k]:Number(v)||0};cleanDonations();saveState();renderTotals();syncRemoteDebounced();}
+
+function setDon(n,k,v){
+  const value = Number(v) || 0;
+  state.donations[n] = {...getDon(n), [k]: value};
+  cleanDonations();
+  saveState();
+  renderTotals();
+  saveDonationCellDebounced(n, k, value);
+}
+
+function saveDonationCellDebounced(nick, field, value){
+  const key = nick + '::' + field;
+  clearTimeout(donationTimers[key]);
+  donationTimers[key] = setTimeout(()=>saveDonationCell(nick, field, value), 450);
+}
+
 function cleanDonations(){const allowed=new Set(uniqueNames());Object.keys(state.donations).forEach(n=>{if(!allowed.has(n))delete state.donations[n];});}
 function factionClass(f){return f.key || keyByTitle(f.title);}
 function keyByTitle(t){return {'Правительство':'pra','УФСБ':'ufsb','МВД':'mvd','ВЧ':'vch','МЗ':'mz','СМИ':'smi'}[t]||'pra';}
 
-function applyTheme(){const theme=config.theme||'system';document.documentElement.classList.toggle('light', theme==='light' || (theme==='system' && matchMedia('(prefers-color-scheme: light)').matches));}
-function renderConfig(){ $('apiUrl').value=config.apiUrl||'';$('sheetId').value=config.sheetId||'1LSlUC-t6_7x8vfg5mQebIwRHfDH8h0bB1Xzxq7wpv_U';$('riskLimit').value=config.riskLimit??100;$('themeSelect').value=config.theme||'system';applyTheme();}
+function applyTheme(){
+  const theme=config.theme||'system';
+  document.documentElement.classList.toggle('light', theme==='light' || (theme==='system' && matchMedia('(prefers-color-scheme: light)').matches));
+}
+
+function renderConfig(){
+  if($('apiUrl')) $('apiUrl').value=config.apiUrl||'';
+  if($('sheetId')) $('sheetId').value=config.sheetId||DEFAULT_SHEET_ID;
+  if($('riskLimit')) $('riskLimit').value=config.riskLimit??100;
+  if($('themeSelect')) $('themeSelect').value=config.theme||'system';
+  applyTheme();
+}
+
 function render(){cleanDonations();renderConfig();renderCurators();renderRewards();renderTotals();}
-function renderCurators(){const grid=$('curatorGrid');grid.innerHTML='';state.factions.forEach(f=>{const box=document.createElement('div');box.className='faction';box.innerHTML=`<div class="faction-title ${factionClass(f)}">${esc(f.title)}</div>${f.leader?`<div class="lead">${esc(f.leader)}</div>`:''}<div class="names"></div>`;const names=box.querySelector('.names');f.names.forEach(n=>{const div=document.createElement('div');div.className='name';div.textContent=n;names.appendChild(div);});grid.appendChild(box);});}
-function renderRewards(){const root=$('rewardGrid');root.innerHTML='';state.factions.forEach(f=>{const cls=factionClass(f);const card=document.createElement('div');card.className='don-card';card.innerHTML=`<div class="don-head"><div class="title faction-title ${cls}">${esc(f.title)}</div><div class="faction-title ${cls}">СТК</div><div class="faction-title ${cls}">Лидер</div><div class="faction-title ${cls}">Руководство</div></div>`;[f.leader,...f.names].filter(Boolean).forEach(n=>{const d=getDon(n);const row=document.createElement('div');row.className='don-row';row.innerHTML=`<div class="nick">${esc(n)}</div><input inputmode="numeric" value="${d.stk||''}" data-n="${esc(n)}" data-k="stk"><input inputmode="numeric" value="${d.leader||''}" data-n="${esc(n)}" data-k="leader"><input inputmode="numeric" value="${d.management||''}" data-n="${esc(n)}" data-k="management">`;card.appendChild(row);});root.appendChild(card);});root.querySelectorAll('input').forEach(i=>i.addEventListener('input',e=>setDon(e.target.dataset.n,e.target.dataset.k,e.target.value)));}
+
+function renderCurators(){
+  const grid=$('curatorGrid'); if(!grid) return;
+  grid.innerHTML='';
+  state.factions.forEach(f=>{
+    const box=document.createElement('div');
+    box.className='faction';
+    box.innerHTML=`<div class="faction-title ${factionClass(f)}">${esc(f.title)}</div>${f.leader?`<div class="lead">${esc(f.leader)}</div>`:''}<div class="names"></div>`;
+    const names=box.querySelector('.names');
+    f.names.forEach(n=>{const div=document.createElement('div');div.className='name';div.textContent=n;names.appendChild(div);});
+    grid.appendChild(box);
+  });
+}
+
+function renderRewards(){
+  const root=$('rewardGrid'); if(!root) return;
+  isRenderingRewards = true;
+  root.innerHTML='';
+  state.factions.forEach(f=>{
+    const cls=factionClass(f);
+    const card=document.createElement('div');
+    card.className='don-card';
+    card.innerHTML=`<div class="don-head"><div class="title faction-title ${cls}">${esc(f.title)}</div><div class="faction-title ${cls}">СТК</div><div class="faction-title ${cls}">Лидер</div><div class="faction-title ${cls}">Руководство</div></div>`;
+    [f.leader,...f.names].filter(Boolean).forEach(n=>{
+      const d=getDon(n);
+      const row=document.createElement('div');
+      row.className='don-row';
+      row.innerHTML=`<div class="nick">${esc(n)}</div><input inputmode="numeric" value="${d.stk||''}" data-n="${esc(n)}" data-k="stk"><input inputmode="numeric" value="${d.leader||''}" data-n="${esc(n)}" data-k="leader"><input inputmode="numeric" value="${d.management||''}" data-n="${esc(n)}" data-k="management">`;
+      card.appendChild(row);
+    });
+    root.appendChild(card);
+  });
+  root.querySelectorAll('input').forEach(i=>i.addEventListener('input',e=>setDon(e.target.dataset.n,e.target.dataset.k,e.target.value)));
+  isRenderingRewards = false;
+}
+
 function renderTotals(){renderSalary();renderTop();renderRisk();}
-function renderSalary(){const list=$('salaryList');list.innerHTML='<div class="salary-head"><div>#</div><div>Никнейм</div><div>Донат</div><div>Итог</div></div>';uniqueNames().forEach((n,idx)=>{const donate=sumDon(n), total=BASE_SALARY+donate;const row=document.createElement('div');row.className='salary-row';row.innerHTML=`<div class="num">${idx+1}</div><div class="nick">${esc(n)}</div><div class="amount">${donate}</div><div class="copyline">${esc(n)} ${total}</div>`;list.appendChild(row);});}
+
+function renderSalary(){
+  const list=$('salaryList'); if(!list) return;
+  list.innerHTML='<div class="salary-head"><div>#</div><div>Никнейм</div><div>Донат</div><div>Итог</div></div>';
+  uniqueNames().forEach((n,idx)=>{
+    const donate=sumDon(n), total=BASE_SALARY+donate;
+    const row=document.createElement('div');
+    row.className='salary-row';
+    row.innerHTML=`<div class="num">${idx+1}</div><div class="nick">${esc(n)}</div><div class="amount">${donate}</div><div class="copyline">${esc(n)} ${total}</div>`;
+    list.appendChild(row);
+  });
+}
+
 function placeEmoji(i){return i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';}
 function placeLabel(i){return `${i+1} место`;}
-function renderTop(){const root=$('topList');const rows=uniqueNames().map(n=>({n,total:sumDon(n)})).sort((a,b)=>b.total-a.total||a.n.localeCompare(b.n)).slice(0,10);root.innerHTML=rows.length?rows.map((r,i)=>`<div class="rank rank-${i<3?'top':'default'}"><b><span class="list-icon medal">${placeEmoji(i)}</span><span class="rank-place">${placeLabel(i)}</span><span class="rank-name">${esc(r.n)}</span></b><span class="badge">${r.total}</span></div>`).join(''):'<div class="rank"><b><span class="list-icon medal">🏆</span>Нет данных</b><span class="badge">0</span></div>';}
-function renderRisk(){const limit=Number(config.riskLimit)||100;const rows=uniqueNames().map(n=>({n,total:sumDon(n)})).filter(r=>r.total<limit).sort((a,b)=>a.total-b.total||a.n.localeCompare(b.n));$('riskList').innerHTML=rows.length?rows.map(r=>`<div class="risk risk-alert"><b><span class="list-icon">⚠️</span>${esc(r.n)}</b><span class="badge">${r.total} / ${limit}</span></div>`).join(''):'<div class="risk risk-ok"><b><span class="list-icon">✅</span>Никого нет в зоне риска</b><span class="badge">OK</span></div>';}
+
+function renderTop(){
+  const root=$('topList'); if(!root) return;
+  const rows=uniqueNames().map(n=>({n,total:sumDon(n)})).sort((a,b)=>b.total-a.total||a.n.localeCompare(b.n)).slice(0,10);
+  root.innerHTML=rows.length?rows.map((r,i)=>`<div class="rank rank-${i<3?'top':'default'}"><b><span class="list-icon medal">${placeEmoji(i)}</span><span class="rank-place">${placeLabel(i)}</span><span class="rank-name">${esc(r.n)}</span></b><span class="badge">${r.total}</span></div>`).join(''):'<div class="rank"><b><span class="list-icon medal">🏆</span>Нет данных</b><span class="badge">0</span></div>';
+}
+
+function renderRisk(){
+  const root=$('riskList'); if(!root) return;
+  const limit=Number(config.riskLimit)||100;
+  const rows=uniqueNames().map(n=>({n,total:sumDon(n)})).filter(r=>r.total<limit).sort((a,b)=>a.total-b.total||a.n.localeCompare(b.n));
+  root.innerHTML=rows.length?rows.map(r=>`<div class="risk risk-alert"><b><span class="list-icon">⚠️</span>${esc(r.n)}</b><span class="badge">${r.total} / ${limit}</span></div>`).join(''):'<div class="risk risk-ok"><b><span class="list-icon">✅</span>Никого нет в зоне риска</b><span class="badge">OK</span></div>';
+}
 
 function curatorsText(){return state.factions.map(f=>`${f.title}\n${[f.leader,...f.names].filter(Boolean).join('\n')}`).join('\n\n');}
 function rewardsText(){return state.factions.map(f=>{const lines=[f.title];[f.leader,...f.names].filter(Boolean).forEach(n=>{const d=getDon(n);lines.push(`${n} | СТК: ${d.stk||0} | Лидер: ${d.leader||0} | Руководство: ${d.management||0}`)});return lines.join('\n');}).join('\n\n');}
@@ -58,15 +172,18 @@ function riskText(){const limit=Number(config.riskLimit)||100;const rows=uniqueN
 async function copyText(text){await navigator.clipboard.writeText(text);toast('Текст скопирован');}
 
 async function checkAccess(){
-  const api=($('apiUrl').value||config.apiUrl||DEFAULT_API_URL).trim();
-  const sheet=($('sheetId').value||config.sheetId||DEFAULT_SHEET_ID).trim();
+  const api=($('apiUrl')?.value||config.apiUrl||DEFAULT_API_URL).trim();
+  const sheet=($('sheetId')?.value||config.sheetId||DEFAULT_SHEET_ID).trim();
   if(!api)return toast('Сначала вставь Apps Script URL');
-  try{const d=await jsonp(`${api}?action=access&sheetId=${encodeURIComponent(sheet)}`);if(d.allowed)toast(`Доступ разрешён: ${d.email||'редактор таблицы'}`);else toast('Доступ запрещён: нет прав редактора');}
-  catch(e){console.error(e);toast('Не удалось проверить доступ');}
+  try{
+    const d=await jsonp(`${api}?action=get&sheetId=${encodeURIComponent(sheet)}`);
+    if(d.allowed)toast(`Доступ разрешён: ${d.email||'редактор таблицы'}`);else toast('Доступ запрещён: нет прав редактора');
+  }catch(e){console.error(e);toast('Не удалось проверить доступ');}
 }
+
 async function syncCurators(){
-  config.apiUrl=($('apiUrl').value||config.apiUrl||DEFAULT_API_URL).trim();
-  config.sheetId=($('sheetId').value||config.sheetId||DEFAULT_SHEET_ID).trim();
+  config.apiUrl=($('apiUrl')?.value||config.apiUrl||DEFAULT_API_URL).trim();
+  config.sheetId=($('sheetId')?.value||config.sheetId||DEFAULT_SHEET_ID).trim();
   saveConfig();
   if(!config.apiUrl){toast('Нужен Apps Script URL');return false;}
   try{
@@ -76,33 +193,111 @@ async function syncCurators(){
       state.factions=d.factions;
       cleanDonations();
       saveState();
-      render();
+      renderCurators();
+      renderRewards();
+      renderTotals();
       toast('Список кураторов обновлён');
       return true;
     }
     toast('Кураторы не найдены');return false;
   }catch(e){console.error(e);toast('Ошибка синхронизации кураторов');return false;}
 }
-async function importPublicSheet(sheetId){return null;}
+
 async function loadRemote(){
-  config.apiUrl=($('apiUrl').value||config.apiUrl||DEFAULT_API_URL).trim();
-  config.sheetId=($('sheetId').value||config.sheetId||DEFAULT_SHEET_ID).trim();
+  config.apiUrl=($('apiUrl')?.value||config.apiUrl||DEFAULT_API_URL).trim();
+  config.sheetId=($('sheetId')?.value||config.sheetId||DEFAULT_SHEET_ID).trim();
   saveConfig();
   if(!config.apiUrl)return;
   try{
     const d=await jsonp(`${config.apiUrl}?action=get&sheetId=${encodeURIComponent(config.sheetId||'')}`);
     if(d.allowed===false){toast('Доступ запрещён');return;}
     const remoteState=d.state||{};
-    state={...state,...remoteState,factions:d.factions||remoteState.factions||state.factions,donations:remoteState.donations||state.donations||{}};
+    state={
+      ...state,
+      ...remoteState,
+      factions:d.factions||remoteState.factions||state.factions,
+      donations:d.donations||remoteState.donations||state.donations||{}
+    };
     cleanDonations();saveState();render();setStatus('Данные загружены');
   }catch(e){console.error(e);setStatus('Не удалось загрузить общие данные');}
 }
-async function syncRemote(){config.apiUrl=$('apiUrl').value.trim();saveConfig();if(!config.apiUrl)return;try{await fetch(config.apiUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'save',sheetId:config.sheetId,state})});setStatus('Синхронизировано '+new Date().toLocaleTimeString());}catch{setStatus('Ошибка сохранения');}}
-let syncTimer;function syncRemoteDebounced(){clearTimeout(syncTimer);syncTimer=setTimeout(syncRemote,800);}
-function setStatus(t){$('statusLine').textContent=t;}
+
+async function loadDonations(){
+  config.apiUrl=($('apiUrl')?.value||config.apiUrl||DEFAULT_API_URL).trim();
+  config.sheetId=($('sheetId')?.value||config.sheetId||DEFAULT_SHEET_ID).trim();
+  saveConfig();
+  if(!config.apiUrl)return;
+  try{
+    const d=await jsonp(`${config.apiUrl}?action=donations&sheetId=${encodeURIComponent(config.sheetId)}`);
+    if(d.allowed===false){toast('Доступ запрещён');return;}
+    if(d.donations){
+      state.donations=d.donations;
+      cleanDonations();
+      saveState();
+      renderRewards();
+      renderTotals();
+      setStatus('Выплаты обновлены '+new Date().toLocaleTimeString());
+    }
+  }catch(e){console.error(e);setStatus('Не удалось загрузить выплаты');}
+}
+
+async function saveDonationCell(nick, field, value) {
+  config.apiUrl = ($('apiUrl')?.value || config.apiUrl || DEFAULT_API_URL).trim();
+  config.sheetId = ($('sheetId')?.value || config.sheetId || DEFAULT_SHEET_ID).trim();
+  saveConfig();
+  if (!config.apiUrl) return;
+  try {
+    await fetch(config.apiUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'text/plain'},
+      body: JSON.stringify({
+        action: 'setDonation',
+        sheetId: config.sheetId,
+        nick: nick,
+        field: field,
+        value: Number(value) || 0
+      })
+    });
+    setStatus('Сохранено ' + new Date().toLocaleTimeString());
+  } catch (e) {
+    console.error(e);
+    setStatus('Ошибка сохранения выплаты');
+  }
+}
+
+async function syncRemote(){
+  // Оставлено для совместимости. В многопользовательской версии выплаты сохраняются через saveDonationCell().
+  await loadDonations();
+}
+
+function syncRemoteDebounced(){
+  clearTimeout(syncTimer);
+  syncTimer=setTimeout(syncRemote,800);
+}
+
+async function resetDonations(){
+  state.donations={};
+  saveState();
+  renderTotals();
+  renderRewards();
+  try{
+    await fetch(config.apiUrl,{
+      method:'POST',
+      headers:{'Content-Type':'text/plain'},
+      body:JSON.stringify({action:'resetDonations',sheetId:config.sheetId})
+    });
+    toast('Выплаты сброшены');
+    setStatus('Выплаты сброшены '+new Date().toLocaleTimeString());
+  }catch(e){
+    console.error(e);
+    toast('Ошибка сброса выплат');
+  }
+}
+
 function parseFactions(rows){const headers=[];rows.forEach((row,r)=>row.forEach((cell,c)=>{const title=normalizeTitle(cell);if(title)headers.push({title,r,c});}));const factions=[];headers.forEach(h=>{const same=headers.filter(x=>x.r===h.r&&x.c>h.c).sort((a,b)=>a.c-b.c)[0];const endC=same?same.c-1:h.c+3;const vals=[];for(let rr=h.r+1;rr<Math.min(rows.length,h.r+9);rr++){for(let cc=h.c;cc<=endC;cc++){const v=String(rows[rr]?.[cc]||'').trim();if(/^[\wА-Яа-яЁё]+_[\wА-Яа-яЁё]+$/.test(v)&&!vals.includes(v))vals.push(v);}}if(vals.length)factions.push({key:keyByTitle(h.title),title:h.title,leader:'',names:vals});});return factions;}
 function normalizeTitle(v){const s=String(v||'').trim().toLowerCase();if(!s)return '';if(s.includes('прав')||s.includes('пра-во'))return 'Правительство';if(s.includes('уфсб'))return 'УФСБ';if(s.includes('мвд'))return 'МВД';if(s==='вч')return 'ВЧ';if(s==='мз')return 'МЗ';if(s.includes('сми'))return 'СМИ';return '';}
-async function resetDonations(){state.donations={};saveState();renderTotals();renderRewards();await syncRemote();toast('Выплаты сброшены');}
+async function importPublicSheet(sheetId){return null;}
+
 function loadHtml2Canvas(){
   if(window.html2canvas) return Promise.resolve(window.html2canvas);
   return new Promise((resolve,reject)=>{
@@ -118,6 +313,7 @@ function loadHtml2Canvas(){
     document.head.appendChild(script);
   });
 }
+
 function buildExportNode(sectionId){
   const section=$(sectionId);
   const exportArea=section.querySelector('.export-area')||section;
@@ -136,6 +332,7 @@ function buildExportNode(sectionId){
   wrapper.appendChild(clone);
   return {wrapper,title};
 }
+
 async function savePngBlob(blob,title){
   const filename=`${title.replace(/[\\/:*?"<>|]+/g,'-')}.png`;
   let copied=false, shared=false;
@@ -162,6 +359,7 @@ async function savePngBlob(blob,title){
   setTimeout(()=>URL.revokeObjectURL(url),2500);
   toast(copied?'PNG скопирован и сохранён':shared?'PNG отправлен и сохранён':'PNG сохранён файлом');
 }
+
 async function exportPNG(sectionId){
   const {wrapper,title}=buildExportNode(sectionId);
   document.body.appendChild(wrapper);
@@ -174,15 +372,10 @@ async function exportPNG(sectionId){
     if(!blob) throw new Error('empty blob');
     await savePngBlob(blob,title);
   }catch(e){
-    try{
-      await fallbackSvgExport(wrapper,title);
-    }catch{
-      toast('PNG не создался. Открой сайт через HTTPS или Live Server.');
-    }
-  }finally{
-    wrapper.remove();
-  }
+    try{await fallbackSvgExport(wrapper,title);}catch{toast('PNG не создался. Открой сайт через HTTPS или Live Server.');}
+  }finally{wrapper.remove();}
 }
+
 async function fallbackSvgExport(wrapper,title){
   const rect=wrapper.getBoundingClientRect();
   const scale=Math.min(3,Math.max(2,window.devicePixelRatio||2));
@@ -208,13 +401,31 @@ async function fallbackSvgExport(wrapper,title){
   if(!blob) throw new Error('empty blob');
   await savePngBlob(blob,title);
 }
-$('settingsBtn').onclick=()=>$('settingsPanel').classList.toggle('hidden');$('closeSettings').onclick=()=>$('settingsPanel').classList.add('hidden');
-$('themeBtn').onclick=()=>{config.theme=config.theme==='dark'?'light':config.theme==='light'?'system':'dark';saveConfig();renderConfig();};
-$('themeSelect').onchange=e=>{config.theme=e.target.value;saveConfig();applyTheme();};
-$('saveConfig').onclick=()=>{config.apiUrl=$('apiUrl').value.trim();config.sheetId=$('sheetId').value.trim();config.riskLimit=Number($('riskLimit').value)||100;config.theme=$('themeSelect').value;saveConfig();render();toast('Настройки сохранены');};
-$('authBtn').onclick=checkAccess;$('importBtn').onclick=syncCurators;$('syncBtn').onclick=async()=>{await syncCurators();await loadRemote();};
-$('resetBtn').onclick=()=>$('confirmModal').classList.remove('hidden');$('cancelReset').onclick=()=>$('confirmModal').classList.add('hidden');$('confirmReset').onclick=async()=>{$('confirmModal').classList.add('hidden');await resetDonations();};
-$('copyCurators').onclick=()=>copyText(curatorsText());$('copyRewards').onclick=()=>copyText(rewardsText());$('copySalary').onclick=()=>copyText(salaryText());$('copyTop').onclick=()=>copyText(topText());$('copyRisk').onclick=()=>copyText(riskText());
-document.querySelectorAll('[data-png]').forEach(b=>b.onclick=()=>exportPNG(b.dataset.png));document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>$(b.dataset.jump).scrollIntoView({behavior:'smooth',block:'start'}));
-window.matchMedia('(prefers-color-scheme: light)').addEventListener?.('change',applyTheme);
-render();setTimeout(async()=>{await loadRemote();await syncCurators();},500);setInterval(syncCurators,30000);
+
+function bindEvents(){
+  if($('settingsBtn')) $('settingsBtn').onclick=()=>$('settingsPanel').classList.toggle('hidden');
+  if($('closeSettings')) $('closeSettings').onclick=()=>$('settingsPanel').classList.add('hidden');
+  if($('themeBtn')) $('themeBtn').onclick=()=>{config.theme=config.theme==='dark'?'light':config.theme==='light'?'system':'dark';saveConfig();renderConfig();};
+  if($('themeSelect')) $('themeSelect').onchange=e=>{config.theme=e.target.value;saveConfig();applyTheme();};
+  if($('saveConfig')) $('saveConfig').onclick=()=>{config.apiUrl=$('apiUrl').value.trim();config.sheetId=$('sheetId').value.trim();config.riskLimit=Number($('riskLimit').value)||100;config.theme=$('themeSelect').value;saveConfig();render();toast('Настройки сохранены');};
+  if($('authBtn')) $('authBtn').onclick=checkAccess;
+  if($('importBtn')) $('importBtn').onclick=syncCurators;
+  if($('syncBtn')) $('syncBtn').onclick=async()=>{await loadRemote();await syncCurators();await loadDonations();};
+  if($('resetBtn')) $('resetBtn').onclick=()=>$('confirmModal').classList.remove('hidden');
+  if($('cancelReset')) $('cancelReset').onclick=()=>$('confirmModal').classList.add('hidden');
+  if($('confirmReset')) $('confirmReset').onclick=async()=>{$('confirmModal').classList.add('hidden');await resetDonations();};
+  if($('copyCurators')) $('copyCurators').onclick=()=>copyText(curatorsText());
+  if($('copyRewards')) $('copyRewards').onclick=()=>copyText(rewardsText());
+  if($('copySalary')) $('copySalary').onclick=()=>copyText(salaryText());
+  if($('copyTop')) $('copyTop').onclick=()=>copyText(topText());
+  if($('copyRisk')) $('copyRisk').onclick=()=>copyText(riskText());
+  document.querySelectorAll('[data-png]').forEach(b=>b.onclick=()=>exportPNG(b.dataset.png));
+  document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>$(b.dataset.jump).scrollIntoView({behavior:'smooth',block:'start'}));
+  window.matchMedia('(prefers-color-scheme: light)').addEventListener?.('change',applyTheme);
+}
+
+bindEvents();
+render();
+setTimeout(async()=>{await loadRemote();await syncCurators();await loadDonations();},500);
+setInterval(syncCurators,30000);
+setInterval(loadDonations,5000);
