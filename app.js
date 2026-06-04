@@ -10,7 +10,7 @@ const DEFAULT_FACTIONS = [
 const BASE_SALARY = 100;
 const STORAGE_KEY = 'gos-pay-state-v2';
 const CONFIG_KEY = 'gos-pay-config-v2';
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzNSEZjElRNVAztXbDDY4fLfv85j_MDDIWvLMXKORPMnBaxwlqfBL1but5GPq438S5w/execc';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzNSEZjElRNVAztXbDDY4fLfv85j_MDDIWvLMXKORPMnBaxwlqfBL1but5GPq438S5w/exec?action=get';
 const DEFAULT_SHEET_ID = '1LSlUC-t6_7x8vfg5mQebIwRHfDH8h0bB1Xzxq7wpv_U';
 
 const $ = id => document.getElementById(id);
