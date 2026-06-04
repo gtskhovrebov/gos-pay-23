@@ -43,7 +43,11 @@ function loadConfig(){
 }
 
 function saveState(){ state.updatedAt=Date.now(); localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }
-function saveConfig(){ localStorage.setItem(CONFIG_KEY,JSON.stringify(config)); }
+function saveConfig(){
+  config.apiUrl = cleanApiUrl(config.apiUrl || DEFAULT_API_URL);
+  config.token = config.token || DEFAULT_TOKEN;
+  localStorage.setItem(CONFIG_KEY,JSON.stringify(config));
+}
 function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
 function toast(text){const t=$('toast'); if(!t) return; t.textContent=text;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
 function setStatus(t){const el=$('statusLine'); if(el) el.textContent=t;}
@@ -57,6 +61,42 @@ function jsonp(url){
     script.src=url+(url.includes('?')?'&':'?')+'callback='+encodeURIComponent(cb)+'&_='+Date.now();
     document.body.appendChild(script);
   });
+}
+
+function cleanApiUrl(value){
+  const raw = String(value || '').trim();
+  if(!raw) return '';
+  try{
+    const u = new URL(raw);
+    u.search = '';
+    u.hash = '';
+    return u.toString();
+  }catch{
+    return raw.split('?')[0].split('#')[0];
+  }
+}
+
+function getApiUrl(){
+  return cleanApiUrl(($('apiUrl')?.value || config.apiUrl || DEFAULT_API_URL).trim());
+}
+
+function getSheetId(){
+  return ($('sheetId')?.value || config.sheetId || DEFAULT_SHEET_ID).trim();
+}
+
+function getToken(){
+  return String(config.token || DEFAULT_TOKEN).trim();
+}
+
+function buildGetUrl(action, extra = {}){
+  const api = getApiUrl();
+  const params = new URLSearchParams({
+    action,
+    sheetId: getSheetId(),
+    token: getToken(),
+    ...extra
+  });
+  return `${api}?${params.toString()}`;
 }
 
 function allFactionNames(){const arr=[];state.factions.forEach(f=>[f.leader,...f.names].filter(Boolean).forEach(n=>arr.push(n.trim())));return arr;}
@@ -173,22 +213,27 @@ function riskText(){const limit=Number(config.riskLimit)||100;const rows=uniqueN
 async function copyText(text){await navigator.clipboard.writeText(text);toast('Текст скопирован');}
 
 async function checkAccess(){
-  const api=($('apiUrl')?.value||config.apiUrl||DEFAULT_API_URL).trim();
-  const sheet=($('sheetId')?.value||config.sheetId||DEFAULT_SHEET_ID).trim();
-  if(!api)return toast('Сначала вставь Apps Script URL');
+  config.apiUrl = getApiUrl();
+  config.sheetId = getSheetId();
+  saveConfig();
+  if(!config.apiUrl) return toast('Сначала вставь Apps Script URL');
   try{
-    const d=await jsonp(`${api}?action=get&sheetId=${encodeURIComponent(sheet)}&token=${encodeURIComponent(config.token||DEFAULT_TOKEN)}`);
-    if(d.allowed)toast(`Доступ разрешён: ${d.email||'редактор таблицы'}`);else toast('Доступ запрещён: нет прав редактора');
-  }catch(e){console.error(e);toast('Не удалось проверить доступ');}
+    const d = await jsonp(buildGetUrl('get'));
+    if(d.allowed) toast(`Доступ разрешён: ${d.email||'GOS Pay'}`);
+    else toast('Доступ запрещён');
+  }catch(e){
+    console.error(e);
+    toast('Не удалось проверить доступ');
+  }
 }
 
 async function syncCurators(){
-  config.apiUrl=($('apiUrl')?.value||config.apiUrl||DEFAULT_API_URL).trim();
-  config.sheetId=($('sheetId')?.value||config.sheetId||DEFAULT_SHEET_ID).trim();
+  config.apiUrl = getApiUrl();
+  config.sheetId = getSheetId();
   saveConfig();
   if(!config.apiUrl){toast('Нужен Apps Script URL');return false;}
   try{
-    const d=await jsonp(`${config.apiUrl}?action=curators&sheetId=${encodeURIComponent(config.sheetId)}&token=${encodeURIComponent(config.token||DEFAULT_TOKEN)}`);
+    const d = await jsonp(buildGetUrl('curators'));
     if(d.allowed===false){toast('Доступ запрещён');return false;}
     if(d.factions&&d.factions.length){
       state.factions=d.factions;
@@ -205,12 +250,12 @@ async function syncCurators(){
 }
 
 async function loadRemote(){
-  config.apiUrl=($('apiUrl')?.value||config.apiUrl||DEFAULT_API_URL).trim();
-  config.sheetId=($('sheetId')?.value||config.sheetId||DEFAULT_SHEET_ID).trim();
+  config.apiUrl = getApiUrl();
+  config.sheetId = getSheetId();
   saveConfig();
   if(!config.apiUrl)return;
   try{
-    const d=await jsonp(`${config.apiUrl}?action=get&sheetId=${encodeURIComponent(config.sheetId||'')}&token=${encodeURIComponent(config.token||DEFAULT_TOKEN)}`);
+    const d = await jsonp(buildGetUrl('get'));
     if(d.allowed===false){toast('Доступ запрещён');return;}
     const remoteState=d.state||{};
     state={
@@ -224,12 +269,12 @@ async function loadRemote(){
 }
 
 async function loadDonations(){
-  config.apiUrl=($('apiUrl')?.value||config.apiUrl||DEFAULT_API_URL).trim();
-  config.sheetId=($('sheetId')?.value||config.sheetId||DEFAULT_SHEET_ID).trim();
+  config.apiUrl = getApiUrl();
+  config.sheetId = getSheetId();
   saveConfig();
   if(!config.apiUrl)return;
   try{
-    const d=await jsonp(`${config.apiUrl}?action=donations&sheetId=${encodeURIComponent(config.sheetId)}&token=${encodeURIComponent(config.token||DEFAULT_TOKEN)}`);
+    const d = await jsonp(buildGetUrl('donations'));
     if(d.allowed===false){toast('Доступ запрещён');return;}
     if(d.donations){
       state.donations=d.donations;
@@ -243,8 +288,8 @@ async function loadDonations(){
 }
 
 async function saveDonationCell(nick, field, value) {
-  config.apiUrl = ($('apiUrl')?.value || config.apiUrl || DEFAULT_API_URL).trim();
-  config.sheetId = ($('sheetId')?.value || config.sheetId || DEFAULT_SHEET_ID).trim();
+  config.apiUrl = getApiUrl();
+  config.sheetId = getSheetId();
   saveConfig();
   if (!config.apiUrl) return;
   try {
@@ -254,7 +299,7 @@ async function saveDonationCell(nick, field, value) {
       headers: {'Content-Type': 'text/plain'},
       body: JSON.stringify({
         action: 'setDonation',
-        token: config.token || DEFAULT_TOKEN,
+        token: getToken(),
         sheetId: config.sheetId,
         nick: nick,
         field: field,
@@ -283,11 +328,15 @@ async function resetDonations(){
   saveState();
   renderTotals();
   renderRewards();
+  config.apiUrl = getApiUrl();
+  config.sheetId = getSheetId();
+  saveConfig();
   try{
     await fetch(config.apiUrl,{
       method:'POST',
+      mode:'no-cors',
       headers:{'Content-Type':'text/plain'},
-      body:JSON.stringify({action:'resetDonations',sheetId:config.sheetId})
+      body:JSON.stringify({action:'resetDonations',token:getToken(),sheetId:config.sheetId})
     });
     toast('Выплаты сброшены');
     setStatus('Выплаты сброшены '+new Date().toLocaleTimeString());
