@@ -1,4 +1,3 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbztJJJ6dtkmHR54yPSJSO33IK8HGPzrUasnYV3dvHcch8COAM5fCHZj5lm46gJUWsBe/exec';
 const DEFAULT_FACTIONS = [
   { key:'pra', title:'Правительство', leader:'Glebik_Dollan', names:['MakwicK_Kotov','Ksenya_Malysheva','Erik_Smirnov','Ferz_Dollan'] },
   { key:'ufsb', title:'УФСБ', leader:'Max_Deep', names:['Harrison_Bradford','Nikolas_Jackson','Nikita_Saddes','Alexei_Lincoln'] },
@@ -10,7 +9,7 @@ const DEFAULT_FACTIONS = [
 const BASE_SALARY = 100;
 const STORAGE_KEY = 'gos-pay-state-v2';
 const CONFIG_KEY = 'gos-pay-config-v2';
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbytaGgSH4mo7cnF8GcHzSB1QKmydaPtN2NmKi99fHaqh6OYIxkvC0eOL-fMir9n8oXV/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwEuZa9_UELXYiRCOPKN1iuE2_DhsctGdtxiyAgcAEAmZKSwDeDPu9sy_6QC2B5dKyK/exec';
 const DEFAULT_SHEET_ID = '1LSlUC-t6_7x8vfg5mQebIwRHfDH8h0bB1Xzxq7wpv_U';
 let state = loadState();
 let config = loadConfig();
@@ -26,6 +25,8 @@ function saveState(){ state.updatedAt=Date.now(); localStorage.setItem(STORAGE_K
 function saveConfig(){ localStorage.setItem(CONFIG_KEY,JSON.stringify(config)); }
 function esc(s){return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
 function toast(text){const t=$('toast');t.textContent=text;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200);}
+function jsonp(url){return new Promise((resolve,reject)=>{const cb='gosPayCb_'+Date.now()+'_'+Math.floor(Math.random()*100000);const script=document.createElement('script');window[cb]=(data)=>{delete window[cb];script.remove();resolve(data);};script.onerror=()=>{delete window[cb];script.remove();reject(new Error('JSONP load failed'));};script.src=url+(url.includes('?')?'&':'?')+'callback='+encodeURIComponent(cb)+'&_='+Date.now();document.body.appendChild(script);});}
+if(new URLSearchParams(location.search).get('reset')==='1'){localStorage.removeItem(STORAGE_KEY);localStorage.removeItem(CONFIG_KEY);history.replaceState(null,'',location.pathname);}
 function allFactionNames(){const arr=[];state.factions.forEach(f=>[f.leader,...f.names].filter(Boolean).forEach(n=>arr.push(n.trim())));return arr;}
 function uniqueNames(){return [...new Set(allFactionNames())].sort((a,b)=>a.localeCompare(b));}
 function getDon(n){return state.donations[n]||{stk:0,leader:0,management:0};}
@@ -56,28 +57,46 @@ function riskText(){const limit=Number(config.riskLimit)||100;const rows=uniqueN
 
 async function copyText(text){await navigator.clipboard.writeText(text);toast('Текст скопирован');}
 
-async function checkAccess(){const api=($('apiUrl').value||'').trim();if(!api)return toast('Сначала вставь Apps Script URL');try{const r=await fetch(`${api}?action=access&sheetId=${encodeURIComponent($('sheetId').value.trim())}`);const d=await r.json();if(d.allowed)toast(`Доступ разрешён: ${d.email||'редактор таблицы'}`);else toast('Доступ запрещён: нет прав редактора');}catch{toast('Не удалось проверить доступ');}}
+async function checkAccess(){
+  const api=($('apiUrl').value||config.apiUrl||DEFAULT_API_URL).trim();
+  const sheet=($('sheetId').value||config.sheetId||DEFAULT_SHEET_ID).trim();
+  if(!api)return toast('Сначала вставь Apps Script URL');
+  try{const d=await jsonp(`${api}?action=access&sheetId=${encodeURIComponent(sheet)}`);if(d.allowed)toast(`Доступ разрешён: ${d.email||'редактор таблицы'}`);else toast('Доступ запрещён: нет прав редактора');}
+  catch(e){console.error(e);toast('Не удалось проверить доступ');}
+}
 async function syncCurators(){
   config.apiUrl=($('apiUrl').value||config.apiUrl||DEFAULT_API_URL).trim();
   config.sheetId=($('sheetId').value||config.sheetId||DEFAULT_SHEET_ID).trim();
   saveConfig();
-  if(!config.apiUrl){toast('Нужен Apps Script URL. Через публичную таблицу роли старших не читаются.');return;}
+  if(!config.apiUrl){toast('Нужен Apps Script URL');return false;}
   try{
-    const r=await fetch(`${config.apiUrl}?action=curators&sheetId=${encodeURIComponent(config.sheetId)}`);
-    const d=await r.json();
-    if(d.allowed===false){toast('Доступ запрещён');return;}
-    const factions=d.factions;
-    if(factions&&factions.length){
-      state.factions=factions;
+    const d=await jsonp(`${config.apiUrl}?action=curators&sheetId=${encodeURIComponent(config.sheetId)}`);
+    if(d.allowed===false){toast('Доступ запрещён');return false;}
+    if(d.factions&&d.factions.length){
+      state.factions=d.factions;
       cleanDonations();
       saveState();
       render();
       toast('Список кураторов обновлён');
-    }else toast('Кураторы не найдены');
-  }catch(e){console.error(e);toast('Ошибка синхронизации кураторов');}
+      return true;
+    }
+    toast('Кураторы не найдены');return false;
+  }catch(e){console.error(e);toast('Ошибка синхронизации кураторов');return false;}
 }
-async function importPublicSheet(sheetId){const names=['кураторы','Кураторы','Лист1','Sheet1'];for(const sheet of names){try{const url=`https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(sheet)}`;const res=await fetch(url);const txt=await res.text();const json=JSON.parse(txt.substring(txt.indexOf('{'),txt.lastIndexOf('}')+1));const rows=json.table.rows.map(r=>(r.c||[]).map(c=>c?.v??''));const factions=parseFactions(rows);if(factions.length)return factions;}catch{}}return null;}
-async function loadRemote(){config.apiUrl=$('apiUrl').value.trim();saveConfig();if(!config.apiUrl)return;try{const r=await fetch(`${config.apiUrl}?action=get&sheetId=${encodeURIComponent(config.sheetId||'')}`);const d=await r.json();if(d.allowed===false){toast('Доступ запрещён');return;}if(d.state){state={...state,...d.state,factions:d.factions||d.state.factions||state.factions,donations:d.state.donations||state.donations};cleanDonations();saveState();render();setStatus('Данные загружены');}}catch{setStatus('Не удалось загрузить общие данные');}}
+async function importPublicSheet(sheetId){return null;}
+async function loadRemote(){
+  config.apiUrl=($('apiUrl').value||config.apiUrl||DEFAULT_API_URL).trim();
+  config.sheetId=($('sheetId').value||config.sheetId||DEFAULT_SHEET_ID).trim();
+  saveConfig();
+  if(!config.apiUrl)return;
+  try{
+    const d=await jsonp(`${config.apiUrl}?action=get&sheetId=${encodeURIComponent(config.sheetId||'')}`);
+    if(d.allowed===false){toast('Доступ запрещён');return;}
+    const remoteState=d.state||{};
+    state={...state,...remoteState,factions:d.factions||remoteState.factions||state.factions,donations:remoteState.donations||state.donations||{}};
+    cleanDonations();saveState();render();setStatus('Данные загружены');
+  }catch(e){console.error(e);setStatus('Не удалось загрузить общие данные');}
+}
 async function syncRemote(){config.apiUrl=$('apiUrl').value.trim();saveConfig();if(!config.apiUrl)return;try{await fetch(config.apiUrl,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({action:'save',sheetId:config.sheetId,state})});setStatus('Синхронизировано '+new Date().toLocaleTimeString());}catch{setStatus('Ошибка сохранения');}}
 let syncTimer;function syncRemoteDebounced(){clearTimeout(syncTimer);syncTimer=setTimeout(syncRemote,800);}
 function setStatus(t){$('statusLine').textContent=t;}
