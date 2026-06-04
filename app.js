@@ -10,8 +10,9 @@ const DEFAULT_FACTIONS = [
 const BASE_SALARY = 100;
 const STORAGE_KEY = 'gos-pay-state-v2';
 const CONFIG_KEY = 'gos-pay-config-v2';
-const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwcdBsBZZj8Ta2kPOOt0Jaxy4cg8DUGANpwKmDQ_bv_qSGa1et7y7AZa_jex9YFQthm/exec';
+const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbwq1Sw22xggXNHDcHSUIelYxilYH9MeE5N5JH-F2xQKTf2147S5pBdzI9Ytkw2okZc1/exec?token=GOSPAY_23';
 const DEFAULT_SHEET_ID = '1LSlUC-t6_7x8vfg5mQebIwRHfDH8h0bB1Xzxq7wpv_U';
+const DEFAULT_TOKEN = 'GOSPAY_23';
 
 const $ = id => document.getElementById(id);
 
@@ -36,7 +37,7 @@ function loadState(){
 }
 
 function loadConfig(){
-  const defaults={theme:'system',riskLimit:100,sheetId:DEFAULT_SHEET_ID,apiUrl:DEFAULT_API_URL};
+  const defaults={theme:'system',riskLimit:100,sheetId:DEFAULT_SHEET_ID,apiUrl:DEFAULT_API_URL,token:DEFAULT_TOKEN};
   try{return {...defaults,...(JSON.parse(localStorage.getItem(CONFIG_KEY))||{})};}
   catch{return defaults;}
 }
@@ -176,7 +177,7 @@ async function checkAccess(){
   const sheet=($('sheetId')?.value||config.sheetId||DEFAULT_SHEET_ID).trim();
   if(!api)return toast('Сначала вставь Apps Script URL');
   try{
-    const d=await jsonp(`${api}?action=get&sheetId=${encodeURIComponent(sheet)}`);
+    const d=await jsonp(`${api}?action=get&sheetId=${encodeURIComponent(sheet)}&token=${encodeURIComponent(config.token||DEFAULT_TOKEN)}`);
     if(d.allowed)toast(`Доступ разрешён: ${d.email||'редактор таблицы'}`);else toast('Доступ запрещён: нет прав редактора');
   }catch(e){console.error(e);toast('Не удалось проверить доступ');}
 }
@@ -187,7 +188,7 @@ async function syncCurators(){
   saveConfig();
   if(!config.apiUrl){toast('Нужен Apps Script URL');return false;}
   try{
-    const d=await jsonp(`${config.apiUrl}?action=curators&sheetId=${encodeURIComponent(config.sheetId)}`);
+    const d=await jsonp(`${config.apiUrl}?action=curators&sheetId=${encodeURIComponent(config.sheetId)}&token=${encodeURIComponent(config.token||DEFAULT_TOKEN)}`);
     if(d.allowed===false){toast('Доступ запрещён');return false;}
     if(d.factions&&d.factions.length){
       state.factions=d.factions;
@@ -209,7 +210,7 @@ async function loadRemote(){
   saveConfig();
   if(!config.apiUrl)return;
   try{
-    const d=await jsonp(`${config.apiUrl}?action=get&sheetId=${encodeURIComponent(config.sheetId||'')}`);
+    const d=await jsonp(`${config.apiUrl}?action=get&sheetId=${encodeURIComponent(config.sheetId||'')}&token=${encodeURIComponent(config.token||DEFAULT_TOKEN)}`);
     if(d.allowed===false){toast('Доступ запрещён');return;}
     const remoteState=d.state||{};
     state={
@@ -228,7 +229,7 @@ async function loadDonations(){
   saveConfig();
   if(!config.apiUrl)return;
   try{
-    const d=await jsonp(`${config.apiUrl}?action=donations&sheetId=${encodeURIComponent(config.sheetId)}`);
+    const d=await jsonp(`${config.apiUrl}?action=donations&sheetId=${encodeURIComponent(config.sheetId)}&token=${encodeURIComponent(config.token||DEFAULT_TOKEN)}`);
     if(d.allowed===false){toast('Доступ запрещён');return;}
     if(d.donations){
       state.donations=d.donations;
@@ -249,9 +250,11 @@ async function saveDonationCell(nick, field, value) {
   try {
     await fetch(config.apiUrl, {
       method: 'POST',
+      mode: 'no-cors',
       headers: {'Content-Type': 'text/plain'},
       body: JSON.stringify({
         action: 'setDonation',
+        token: config.token || DEFAULT_TOKEN,
         sheetId: config.sheetId,
         nick: nick,
         field: field,
