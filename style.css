@@ -439,3 +439,31 @@ input,select{width:100%;margin-top:6px;border:1px solid var(--line);border-radiu
     padding: 7px 2px !important;
   }
 }
+/* === FIX: ники полностью без переноса и без троеточия === */
+
+.don-row .nick {
+  white-space: nowrap !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+
+  font-size: clamp(11px, 1.15vw, 17px) !important;
+  letter-spacing: -0.04em !important;
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+}
+
+/* На телефоне ещё сильнее ужимаем шрифт */
+@media (max-width: 620px) {
+  .don-row .nick {
+    font-size: clamp(8.5px, 2.45vw, 12px) !important;
+    letter-spacing: -0.06em !important;
+    padding-left: 2px !important;
+    padding-right: 2px !important;
+  }
+}
