@@ -201,3 +201,37 @@
     font-size: 13px;
   }
 }
+/* FIX: выравнивание столбцов таблицы выплат */
+.don-head,
+.don-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(120px, 1.15fr);
+  align-items: stretch;
+}
+
+.don-head > *,
+.don-row > * {
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* FIX: заголовок "Руководство" не переносится */
+.don-head .faction-title,
+.don-head .title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* FIX: на телефоне таблица не едет */
+@media (max-width: 520px) {
+  .don-card {
+    overflow-x: auto;
+  }
+
+  .don-head,
+  .don-row {
+    min-width: 620px;
+    grid-template-columns: 200px 130px 130px 160px;
+  }
+}
