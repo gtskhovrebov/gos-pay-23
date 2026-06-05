@@ -25,11 +25,17 @@ const DEFAULT_FACTIONS = [
 ];
 
 function seniorCuratorSet(){
-  return new Set(
-    state.factions
-      .map(f => String(f.leader || '').trim())
-      .filter(Boolean)
-  );
+  const seniors = [];
+
+  state.factions.forEach(f => {
+    if (f.leader) seniors.push(String(f.leader).trim());
+
+    if (Array.isArray(f.seniorNames)) {
+      f.seniorNames.forEach(n => seniors.push(String(n).trim()));
+    }
+  });
+
+  return new Set(seniors.filter(Boolean));
 }
 
 function isSeniorCurator(nick){
