@@ -1,1 +1,15 @@
-{"name":"GOS Pay","short_name":"GOS Pay","start_url":"./index.html","display":"standalone","background_color":"#111827","theme_color":"#111827","icons":[{"src":"icon.svg","sizes":"512x512","type":"image/svg+xml"}]}
+{
+  "name": "GOS Pay",
+  "short_name": "GOS Pay",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "icons": [
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
