@@ -92,3 +92,112 @@
 .png-export-stage .rank-place{color:#0f172a!important}
 .png-export-stage .rank-name{color:#0f172a!important}
 .png-export-stage .list-icon.medal{background:#ffffff!important;border-color:#d1d5db!important}
+
+/* FIX: шапка не накладывается на контент */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  padding-top: calc(12px + env(safe-area-inset-top));
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(18px);
+}
+
+/* FIX: контент ниже шапки */
+.content {
+  padding-top: 18px;
+}
+
+/* FIX: заголовок "Руководство" не переносит одну букву */
+.don-head .faction-title,
+.don-head .title {
+  white-space: nowrap;
+  word-break: normal;
+  overflow-wrap: normal;
+  font-size: clamp(18px, 4vw, 28px);
+  line-height: 1.1;
+}
+
+/* FIX: на телефоне таблица не ломает заголовки */
+.don-card {
+  overflow: hidden;
+}
+
+.don-head {
+  grid-template-columns: 1.25fr 0.9fr 0.9fr 1.15fr;
+}
+
+.don-head .faction-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-width: 0;
+}
+
+/* FIX: мобильная адаптация */
+@media (max-width: 520px) {
+  .topbar {
+    padding: calc(14px + env(safe-area-inset-top)) 14px 14px;
+  }
+
+  .brand {
+    gap: 10px;
+  }
+
+  .brand img {
+    width: 54px;
+    height: 54px;
+    flex: 0 0 54px;
+  }
+
+  .brand h1 {
+    font-size: 34px;
+    line-height: 1;
+  }
+
+  .eyebrow {
+    font-size: 15px;
+    line-height: 1.15;
+    letter-spacing: 0.16em;
+  }
+
+  .top-actions {
+    gap: 8px;
+  }
+
+  .icon-btn {
+    width: 52px;
+    height: 52px;
+    font-size: 24px;
+  }
+
+  .content {
+    padding-top: 16px;
+  }
+
+  .don-head .faction-title,
+  .don-head .title {
+    font-size: clamp(16px, 3.8vw, 22px);
+  }
+}
+
+/* FIX: если экран совсем узкий */
+@media (max-width: 390px) {
+  .don-head {
+    grid-template-columns: 1.2fr 0.85fr 0.85fr 1.1fr;
+  }
+
+  .don-head .faction-title,
+  .don-head .title {
+    font-size: 15px;
+  }
+
+  .brand h1 {
+    font-size: 30px;
+  }
+
+  .eyebrow {
+    font-size: 13px;
+  }
+}
