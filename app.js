@@ -25,11 +25,12 @@ const DEFAULT_FACTIONS = [
 ];
 
 function seniorCuratorSet(){
-  return new Set(
-    state.factions
-      .map(f => String(f.leader || '').trim())
-      .filter(Boolean)
-  );
+  return new Set([
+    'Glebik_Dollan',
+    'Max_Deep',
+    'Ksenya_Malysheva',
+    'Theo_Lusker'
+  ]);
 }
 
 function isSeniorCurator(nick){
