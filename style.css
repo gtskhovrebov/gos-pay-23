@@ -349,3 +349,57 @@ input,select{width:100%;margin-top:6px;border:1px solid var(--line);border-radiu
   .brand h1{font-size:30px}
   .eyebrow{font-size:13px}
 }
+/* MOBILE FIX: нормальная таблица выплат без горизонтального скролла */
+@media (max-width: 720px) {
+  .don-card {
+    overflow: hidden !important;
+    border-radius: 28px !important;
+  }
+
+  .don-head {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    min-width: 0 !important;
+  }
+
+  .don-head .title {
+    grid-column: 1 / -1 !important;
+    min-height: 58px !important;
+    font-size: 26px !important;
+    white-space: nowrap !important;
+  }
+
+  .don-head .faction-title:not(.title) {
+    min-height: 44px !important;
+    padding: 10px 4px !important;
+    font-size: 18px !important;
+    white-space: nowrap !important;
+  }
+
+  .don-row {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    min-width: 0 !important;
+    border-top: 1px solid var(--line-strong) !important;
+  }
+
+  .don-row .nick {
+    grid-column: 1 / -1 !important;
+    padding: 13px 8px !important;
+    font-size: 17px !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid rgba(15,23,42,.18) !important;
+  }
+
+  .don-row input {
+    height: 48px !important;
+    min-width: 0 !important;
+    font-size: 18px !important;
+    border-left: 1px solid var(--line-strong) !important;
+    border-radius: 0 !important;
+  }
+
+  .don-row input:first-of-type {
+    border-left: 0 !important;
+  }
+}
