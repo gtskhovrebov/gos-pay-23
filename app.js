@@ -269,22 +269,41 @@ async function loadRemote(){
 }
 
 async function loadDonations(){
-  config.apiUrl = getApiUrl();
-  config.sheetId = getSheetId();
+  config.apiUrl=($('apiUrl')?.value||config.apiUrl||DEFAULT_API_URL).trim();
+  config.sheetId=($('sheetId')?.value||config.sheetId||DEFAULT_SHEET_ID).trim();
   saveConfig();
   if(!config.apiUrl)return;
+
+  const active = document.activeElement;
+  const isEditing =
+    active &&
+    active.tagName === 'INPUT' &&
+    active.closest('#rewardGrid');
+
   try{
-    const d = await jsonp(buildGetUrl('donations'));
-    if(d.allowed===false){toast('Доступ запрещён');return;}
+    const d=await jsonp(`${config.apiUrl}?action=donations&sheetId=${encodeURIComponent(config.sheetId)}&token=${encodeURIComponent(config.token||DEFAULT_TOKEN)}`);
+
+    if(d.allowed===false){
+      toast('Доступ запрещён');
+      return;
+    }
+
     if(d.donations){
       state.donations=d.donations;
       cleanDonations();
       saveState();
-      renderRewards();
+
+      if(!isEditing){
+        renderRewards();
+      }
+
       renderTotals();
       setStatus('Выплаты обновлены '+new Date().toLocaleTimeString());
     }
-  }catch(e){console.error(e);setStatus('Не удалось загрузить выплаты');}
+  }catch(e){
+    console.error(e);
+    setStatus('Не удалось загрузить выплаты');
+  }
 }
 
 async function saveDonationCell(nick, field, value) {
