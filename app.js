@@ -506,9 +506,18 @@ setTimeout(async()=>{
 
 setInterval(syncCurators,30000);
 
-setInterval(() => {
-  loadDonations();
-}, 15000);
+onValue(ref(db, "gosPay23/donations"), (snapshot) => {
+
+    const data = snapshot.val();
+
+    if (!data) return;
+
+    state.donations = data;
+
+    renderRewards();
+    renderTotals();
+
+});
 
 document.addEventListener('focusout', e => {
   if(e.target && e.target.closest('#rewardGrid')){
