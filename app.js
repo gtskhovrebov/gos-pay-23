@@ -478,6 +478,30 @@ function bindEvents(){
 
 bindEvents();
 render();
-setTimeout(async()=>{await loadRemote();await syncCurators();await loadDonations();},500);
+
+setTimeout(async()=>{
+  await loadRemote();
+  await syncCurators();
+  await loadDonations();
+},500);
+
 setInterval(syncCurators,30000);
-setInterval(loadDonations,5000);
+
+setInterval(() => {
+  const active = document.activeElement;
+
+  const isEditing =
+    active &&
+    active.tagName === 'INPUT' &&
+    active.closest('#rewardGrid');
+
+  if (!isEditing) {
+    loadDonations();
+  }
+}, 10000);
+
+document.addEventListener('focusout', e => {
+  if (e.target && e.target.closest('#rewardGrid')) {
+    setTimeout(loadDonations, 800);
+  }
+});
