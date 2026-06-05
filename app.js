@@ -24,6 +24,22 @@ const DEFAULT_FACTIONS = [
   { key:'smi', title:'СМИ', leader:'Theo_Lusker', names:['Nezox_Shadow','Ivan_Khmeliaiev'] }
 ];
 
+function seniorCuratorSet(){
+  return new Set(
+    state.factions
+      .map(f => String(f.leader || '').trim())
+      .filter(Boolean)
+  );
+}
+
+function isSeniorCurator(nick){
+  return seniorCuratorSet().has(String(nick || '').trim());
+}
+
+function filteredRatingNames(){
+  return uniqueNames().filter(n => !isSeniorCurator(n));
+}
+
 const BASE_SALARY = 100;
 const STORAGE_KEY = 'gos-pay-state-firebase-v1';
 const CONFIG_KEY = 'gos-pay-config-firebase-v1';
@@ -87,14 +103,14 @@ function renderTotals(){renderSalary();renderTop();renderRisk();}
 function renderSalary(){const list=$('salaryList');if(!list)return;list.innerHTML='<div class="salary-head"><div>#</div><div>Никнейм</div><div>Донат</div><div>Итог</div></div>';uniqueNames().forEach((n,idx)=>{const donate=sumDon(n),total=BASE_SALARY+donate;const row=document.createElement('div');row.className='salary-row';row.innerHTML=`<div class="num">${idx+1}</div><div class="nick">${esc(n)}</div><div class="amount">${donate}</div><div class="copyline">${esc(n)} ${total}</div>`;list.appendChild(row);});}
 function placeEmoji(i){return i===0?'🥇':i===1?'🥈':i===2?'🥉':'🏅';}
 function placeLabel(i){return `${i+1} место`;}
-function renderTop(){const root=$('topList');if(!root)return;const rows=uniqueNames().map(n=>({n,total:sumDon(n)})).sort((a,b)=>b.total-a.total||a.n.localeCompare(b.n)).slice(0,10);root.innerHTML=rows.length?rows.map((r,i)=>`<div class="rank rank-${i<3?'top':'default'}"><b><span class="list-icon medal">${placeEmoji(i)}</span><span class="rank-place">${placeLabel(i)}</span><span class="rank-name">${esc(r.n)}</span></b><span class="badge">${r.total}</span></div>`).join(''):'<div class="rank"><b><span class="list-icon medal">🏆</span>Нет данных</b><span class="badge">0</span></div>';}
-function renderRisk(){const root=$('riskList');if(!root)return;const limit=Number(config.riskLimit)||100;const rows=uniqueNames().map(n=>({n,total:sumDon(n)})).filter(r=>r.total<limit).sort((a,b)=>a.total-b.total||a.n.localeCompare(b.n));root.innerHTML=rows.length?rows.map(r=>`<div class="risk risk-alert"><b><span class="list-icon">⚠️</span>${esc(r.n)}</b><span class="badge">${r.total} / ${limit}</span></div>`).join(''):'<div class="risk risk-ok"><b><span class="list-icon">✅</span>Никого нет в зоне риска</b><span class="badge">OK</span></div>';}
+function renderTop(){const root=$('topList');if(!root)return;const rows=filteredRatingNames().map(n=>({n,total:sumDon(n)})).sort((a,b)=>b.total-a.total||a.n.localeCompare(b.n)).slice(0,10);root.innerHTML=rows.length?rows.map((r,i)=>`<div class="rank rank-${i<3?'top':'default'}"><b><span class="list-icon medal">${placeEmoji(i)}</span><span class="rank-place">${placeLabel(i)}</span><span class="rank-name">${esc(r.n)}</span></b><span class="badge">${r.total}</span></div>`).join(''):'<div class="rank"><b><span class="list-icon medal">🏆</span>Нет данных</b><span class="badge">0</span></div>';}
+function renderRisk(){const root=$('riskList');if(!root)return;const limit=Number(config.riskLimit)||100;const rows=filteredRatingNames().map(n=>({n,total:sumDon(n)})).filter(r=>r.total<limit).sort((a,b)=>a.total-b.total||a.n.localeCompare(b.n));root.innerHTML=rows.length?rows.map(r=>`<div class="risk risk-alert"><b><span class="list-icon">⚠️</span>${esc(r.n)}</b><span class="badge">${r.total} / ${limit}</span></div>`).join(''):'<div class="risk risk-ok"><b><span class="list-icon">✅</span>Никого нет в зоне риска</b><span class="badge">OK</span></div>';}
 function curatorsText(){return state.factions.map(f=>`${f.title}\n${[f.leader,...f.names].filter(Boolean).join('\n')}`).join('\n\n');}
 function rewardsText(){return state.factions.map(f=>{const lines=[f.title];[f.leader,...f.names].filter(Boolean).forEach(n=>{const d=getDon(n);lines.push(`${n} | СТК: ${d.stk||0} | Лидер: ${d.leader||0} | Руководство: ${d.management||0}`)});return lines.join('\n');}).join('\n\n');}
 function salaryText(){return uniqueNames().map(n=>`${n} ${BASE_SALARY+sumDon(n)}`).join('\n');}
-function topRows(){return uniqueNames().map(n=>({n,total:sumDon(n)})).sort((a,b)=>b.total-a.total||a.n.localeCompare(b.n)).slice(0,10);}
+function topRows(){return filteredRatingNames().map(n=>({n,total:sumDon(n)})).sort((a,b)=>b.total-a.total||a.n.localeCompare(b.n)).slice(0,10);}
 function topText(){const rows=topRows();return rows.length?['🏆 ТОП КУРАТОРОВ',...rows.map((r,i)=>`${placeEmoji(i)} ${i+1} место — ${r.n}: ${r.total}`)].join('\n'):'🏆 ТОП КУРАТОРОВ\nНет данных';}
-function riskText(){const limit=Number(config.riskLimit)||100;const rows=uniqueNames().map(n=>({n,total:sumDon(n)})).filter(r=>r.total<limit).sort((a,b)=>a.total-b.total||a.n.localeCompare(b.n));return rows.length?['⚠️ В ЗОНЕ РИСКА',...rows.map(r=>`⚠️ ${r.n}: ${r.total} / ${limit}`)].join('\n'):'⚠️ В ЗОНЕ РИСКА\n✅ Никого нет в зоне риска';}
+function riskText(){const limit=Number(config.riskLimit)||100;const rows=filteredRatingNames().map(n=>({n,total:sumDon(n)})).filter(r=>r.total<limit).sort((a,b)=>a.total-b.total||a.n.localeCompare(b.n));return rows.length?['⚠️ В ЗОНЕ РИСКА',...rows.map(r=>`⚠️ ${r.n}: ${r.total} / ${limit}`)].join('\n'):'⚠️ В ЗОНЕ РИСКА\n✅ Никого нет в зоне риска';}
 async function copyText(text){await navigator.clipboard.writeText(text);toast('Текст скопирован');}
 async function checkAccess(){try{await set(metaRef('lastAccessCheck'),{time:serverTimestamp(),source:'GOS Pay'});toast('Firebase доступ разрешён');setStatus('Firebase подключён');}catch(e){console.error(e);toast('Ошибка доступа Firebase');setStatus('Ошибка Firebase');}}
 async function syncCurators(){config.apiUrl=getApiUrl();config.sheetId=getSheetId();saveConfig();if(!config.apiUrl){toast('Нужен Apps Script URL');return false;}try{const d=await jsonp(buildGetUrl('curators'));if(d.allowed===false){toast('Доступ Apps Script запрещён');return false;}if(d.factions&&d.factions.length){state.factions=d.factions;cleanDonations(true);saveState();await set(factionsRef(),d.factions);await set(metaRef('lastCuratorsSync'),serverTimestamp());renderCurators();renderRewards();renderTotals();toast('Список кураторов обновлён');return true;}toast('Кураторы не найдены');return false;}catch(e){console.error(e);toast('Ошибка синхронизации кураторов');return false;}}
