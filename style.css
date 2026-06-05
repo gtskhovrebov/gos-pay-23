@@ -473,3 +473,90 @@ input,select{width:100%;margin-top:6px;border:1px solid var(--line);border-radiu
     font-size: 14px !important;
   }
 }
+/* === HARD RESET TABLE FIX === */
+
+.donation-grid {
+  display: grid !important;
+  gap: 22px !important;
+}
+
+.don-card {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  border-radius: 28px !important;
+}
+
+.don-head,
+.don-row {
+  display: grid !important;
+  grid-template-columns: minmax(190px, 1.35fr) minmax(80px, .75fr) minmax(90px, .8fr) minmax(150px, 1.1fr) !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+.don-head > div,
+.don-row > div,
+.don-row > input {
+  min-width: 0 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.don-head .faction-title,
+.don-head .title {
+  min-height: 52px !important;
+  height: 52px !important;
+  padding: 8px 6px !important;
+  font-size: clamp(16px, 1.8vw, 26px) !important;
+  line-height: 1 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.don-row .nick {
+  font-size: clamp(13px, 1.25vw, 17px) !important;
+  padding: 10px 6px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.don-row input {
+  font-size: clamp(13px, 1.25vw, 17px) !important;
+  padding: 8px 4px !important;
+}
+
+/* Телефон: таблица скроллится, но не ломается */
+@media (max-width: 620px) {
+  .don-card {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .don-head,
+  .don-row {
+    grid-template-columns: 170px 90px 90px 135px !important;
+    min-width: 485px !important;
+    width: 485px !important;
+  }
+
+  .don-head .faction-title,
+  .don-head .title {
+    font-size: 16px !important;
+    height: 46px !important;
+    min-height: 46px !important;
+  }
+
+  .don-row .nick,
+  .don-row input {
+    font-size: 13px !important;
+  }
+}
