@@ -403,3 +403,73 @@ input,select{width:100%;margin-top:6px;border:1px solid var(--line);border-radiu
     border-left: 0 !important;
   }
 }
+/* FINAL FIX: нормальная таблица выплат */
+.donation-grid {
+  display: grid !important;
+  gap: 22px !important;
+}
+
+.don-card {
+  width: 100% !important;
+  overflow: hidden !important;
+  border-radius: 28px !important;
+}
+
+.don-head,
+.don-row {
+  display: grid !important;
+  grid-template-columns: 1.35fr 0.75fr 0.75fr 1.05fr !important;
+  min-width: 0 !important;
+  width: 100% !important;
+}
+
+.don-head > *,
+.don-row > * {
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.don-head .faction-title,
+.don-head .title {
+  font-size: clamp(18px, 2.1vw, 32px) !important;
+  line-height: 1.05 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: clip !important;
+  padding: 12px 8px !important;
+}
+
+.don-row .nick {
+  font-size: clamp(14px, 1.4vw, 19px) !important;
+  padding: 12px 8px !important;
+}
+
+.don-row input {
+  font-size: clamp(14px, 1.4vw, 18px) !important;
+  padding: 10px 6px !important;
+}
+
+/* Телефон: таблица свайпается, но не ломается */
+@media (max-width: 620px) {
+  .don-card {
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .don-head,
+  .don-row {
+    grid-template-columns: 180px 100px 100px 150px !important;
+    min-width: 530px !important;
+    width: 530px !important;
+  }
+
+  .don-head .faction-title,
+  .don-head .title {
+    font-size: 18px !important;
+  }
+
+  .don-row .nick {
+    font-size: 14px !important;
+  }
+}
