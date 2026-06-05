@@ -507,20 +507,11 @@ setTimeout(async()=>{
 setInterval(syncCurators,30000);
 
 setInterval(() => {
-  const active = document.activeElement;
-
-  const isEditing =
-    active &&
-    active.tagName === 'INPUT' &&
-    active.closest('#rewardGrid');
-
-  if (!isEditing) {
-    loadDonations();
-  }
-}, 10000);
+  loadDonations();
+}, 15000);
 
 document.addEventListener('focusout', e => {
-  if (e.target && e.target.closest('#rewardGrid')) {
-    setTimeout(loadDonations, 800);
+  if(e.target && e.target.closest('#rewardGrid')){
+    setTimeout(loadDonations, 700);
   }
 });
